@@ -26,7 +26,7 @@ Docker should work too.
 
 ## Usage
 
-On the *build* host call `build_one` with appropriate parameters to
+On the *build host* call `build_one` with appropriate parameters to
 create the spec file and run the build.
 
 Required parameters are:
