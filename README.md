@@ -3,10 +3,12 @@
 - Thanks to Oracle for providing: https://github.com/mysql/mysql-server.
 - Thanks to Percona for providing: https://github.com/percona/percona-server.
 
-You could use Percona Server but if you want some of the extra features
-provided against the upstream MySQL community version or you may want
-to run the Percona PAM plugin on the upstream MySQL server.  There are
-reasons to do both. You choose.
+You could use Percona Server if you want some of the extra features
+provided against the upstream MySQL community version.  However, you may
+want to run the Percona PAM plugin on the upstream MySQL server itself.
+There are reasons to do both. You choose.
+
+Both code bases use GPL software so this is perfectly acceptable.
 
 This repo provides a process to build the Percona PAM plugin on the
 MySQL server and create the rpms that are needed.  Intended to be used
@@ -14,8 +16,8 @@ on RHEL 7/8/9 and "compatible" distributions.
 
 ## Requirements
 
-To perform the builds and configuration requires docker to be used.  This
-is so that a reproducible build can be created and the same process can
+To perform the builds and configuration requires the use of docker.  This
+is to ensure a reproducible build can be created and the same process can
 be run against multiple OS versions and MySQL/Percona server combinations.
 
 Note: the host running docker does not need to run on a RHEL or compatible
@@ -24,8 +26,8 @@ Docker should work too.
 
 ## Usage
 
-Call `build_one` with appropriate paramters to create the spec file and
-run the build.
+On the *build* host call `build_one` with appropriate parameters to
+create the spec file and run the build.
 
 Required parameters are:
 - `<mysql-tag>` to build against, e.g. `mysql-8.0.37`, `mysql-8.4.0`
