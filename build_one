@@ -1,0 +1,201 @@
+#!/bin/bash
+#
+# build Percona PAM plugin rpm for MySQL under docker.
+# Input:
+# - OS label
+# - MySQL git tag, currently release versions, e.g. mysql-8.4.0
+# - Percona git label, currently release versions, e.g. Percona-Server-8.3.0-1
+#
+
+# find and include common_code.sh
+if [ ! -e $(dirname $0)/common_code.sh ]; then
+	echo "ERROR: $(basename $0): can not find expected $(dirname $0)/common_code.sh. Exiting"
+	exit 1
+fi
+
+source $(dirname $0)/common_code.sh
+
+set -e
+
+# configuration settings
+mysql_server_url=https://github.com/mysql/mysql-server.git
+percona_server_url=https://github.com/percona/percona-server.git
+
+log_info () {
+	local logfile="$1"
+	shift
+
+	msg_info "$@" | tee -a $logfile
+}
+
+get_oses () {
+	grep -v "^#" images.conf |\
+	grep -v "^[[:space:]]*$" |\
+	awk '{ print $1 }' | sort |\
+	tr "\n" " " |\
+	sed -e 's/[[:space:]][[:space:]]*/ /g'
+}
+
+get_labels () {
+	local os=$1
+
+	grep -v "^#" build.conf |\
+	grep -v "^[[:space:]]*$" |\
+	awk -v os=$os 'os == $2 { print $1 }' | sort |\
+	tr "\n" " " |\
+	sed -e 's/[[:space:]][[:space:]]*/ /g'
+}
+
+get_image () {
+	local osname=$1
+
+	grep -v "^#" images.conf |\
+	grep -v "^[[:space:]]*$" |\
+	awk -v osname=$osname 'osname == $1 { print $2 }'
+}
+
+check_osname () {
+	local os
+	local osname="$1"
+
+	[ -n "$osname" ] || msg_error 1 "No osname given. Try one of: $(get_oses)"
+	for os in $(get_oses); do
+		[ "$osname" = "$os" ] && return
+	done
+	msg_error 1 "Given osname $osname not found. Try one of: $(get_oses)"
+}
+
+check_mysql_tag () {
+	local mysql_tag="$1"
+
+	[ -n "$mysql_tag" ] || msg_error 2 "No MySQL tag given."
+	# Accept only expected values so far
+	if ! echo "$mysql_tag" | grep -q '^mysql-8\.[0-9][[0-9]*\.[0-9][0-9]*$'; then
+		msg_error 3 "Invalid MySQL tag '$mysql_tag'.  Expected to be of the form mysql-8.X.Y where X & Y are digits >=0"
+	fi
+	[ -n "$(check_remote_tag $mysql_server_url $mysql_tag)" ] || msg_error 3 "No MySQL tag $mysql_tag found on $mysql_server_url."
+}
+
+check_percona_tag () {
+	local percona_tag="$1"
+
+	[ -n "$percona_tag" ] || msg_error 4 "No percona tag provided."
+	# Accept only expected values so far
+	if ! echo "$percona_tag" | grep -q '^Percona-Server-8\.[0-9][[0-9]*\.[0-9][0-9]*-[0-9][0-9]*$'; then
+		msg_error 3 "Invalid Percona tag '$percona_tag'.  Expected to be of the form Percona-Server-8.X.Y-Z where X, Y & Z are digits >=0"
+	fi
+	[ -n "$(check_remote_tag $percona_server_url $percona_tag)" ] || msg_error 5 "No Percona tag $percona_tag found on $percona_server_url."
+}
+
+check_image () {
+	local image="$1"
+
+	[ -n "$image" ] || msg_error 3 "No image found for os: '$osname'. Possible OS values: $(get_oses)"
+}
+
+check_remote_tag () {
+	local remote_url=$1
+	local tag=$2
+
+	git ls-remote --tags $remote_url | awk '{ print $2 }' | grep refs/tags/$tag
+}
+
+use_shell=
+noop=
+noop_text=
+while getopts ns flag; do
+	case $flag in
+	n)	noop=echo
+		noop_text="NOT "
+		;;
+	s)	use_shell=1;;
+	*)	echo "ERROR: invalid flag $flag, exiting"
+		exit 1
+		;;
+	esac
+done
+shift $(($OPTIND - 1))
+
+set +u
+osname="$1"
+check_osname "$osname"
+
+mysql_tag="$2"
+percona_tag="$3"
+
+check_mysql_tag "$mysql_tag"
+check_percona_tag "$percona_tag"
+
+boost_version="$4"
+# This is needed for 8.0 only
+if [ $(need_boost_version $mysql_tag) = 1 ]; then
+	if [ -z "$boost_version" ]; then
+		msg_error 1 "Boost version must be provided for MySQL 8.0 builds.  Try 1.77.0 (works with 8.0.36)"
+	fi
+else
+	boost_version=""
+fi
+
+image=$(get_image "$osname")
+check_image "$image"
+set -u
+
+mysql_version=$(echo $mysql_tag | sed -e 's/mysql-//')
+percona_version=$(echo $percona_tag | sed -e 's/Percona-Server-//' -e 's/-[0-9]*$//')
+
+logfile=log/$myname-$osname-${mysql_version}-${percona_version}.log
+test -d $(dirname $logfile) || {
+	msg_info "Creating missing log directory $(dirname $log_file)"
+	mkdir -p $(dirname $logfile)
+}
+
+# setup default command if not jumping into the shell
+if [ -z "$use_shell" ]; then
+	msg_info "Normal build"
+	command="/data/build -a $mysql_tag $percona_tag $boost_version"
+	interactive=
+else
+	msg_info "Dropping to container shell"
+	command="/bin/bash"
+	interactive="-it"
+fi
+
+set -e
+
+# name shown in docker is not large
+mysql_version=$(get_mysql_version $mysql_tag)
+percona_version=$(get_percona_version $percona_tag)
+
+msg_info $logfile "${noop_text}Building Percona PAM for MySQL on $osname, MySQL: $mysql_tag, Percona Server: $percona_tag"
+
+# catch start time
+# - OS is shown via image
+# - add a 5-char random suffix
+name=ppb-${mysql_version}-${percona_version}-$(tr -dc a-z </dev/urandom | head -c 5)
+start_seconds=$SECONDS
+(
+	cd $(dirname $0) &&
+	$noop docker run \
+		$interactive \
+		--name=$name \
+		--rm \
+		--network=host \
+		--hostname=buildhost \
+		-v $PWD:/data \
+		$image \
+		$command
+)
+rc=$?
+
+end_seconds=$SECONDS
+if [ -n "$noop" ]; then
+	status=NOOP
+elif [ $rc = 0 ]; then
+	status=OK
+else
+	status=FAILED
+fi
+elapsed=$(($end_seconds - $start_seconds))
+echo "$(utc_timestamp) $myhostname $myname[$$] osname=$osname, mysql_tag=$mysql_tag, percona_tag=$percona_tag, image=$image, status=$status, rc=$rc, elapsed=$elapsed" >> log/$myname.build_status
+
+msg_info $logfile "Exit status: $rc for ${noop_text}build: osname=$osname, mysql_tag=$mysql_tag, percona_tag=$percona_tag, image=$image, status=$status, elapsed=$elapsed"

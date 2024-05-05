@@ -1,0 +1,4 @@
+SOURCES/
+built/
+log/
+percona-pam-plugin-for-mysql.spec

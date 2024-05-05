@@ -1,0 +1,193 @@
+######################## ONLY EDIT SETTINGS BELOW ##########################
+
+# The MySQL version to build for
+%define mysql_tag    @@MYSQL_TAG@@
+
+# This is the <branch> or <tag> of the tree to checkout.
+# Currently expecting a release version, not any tag.
+# e.g.  Percona-Server-8.3.0-1
+%define percona_tag @@PERCONA_TAG@@
+
+# This may not be used for 8.4+ builds
+%define boost_version @@BOOST_VERSION@@
+
+##################### DO NOT EDIT BELOW THIS LINE ##########################
+
+%define mysql_version     %(echo %{mysql_tag} | sed -e 's/mysql-//')
+
+# Should I allow building the debug package?
+#define debug_package #{nil}
+
+# Allow for later building on MySQL 8.3/8.4/... by adding a suffix
+# to the package name version based on the MySQL version.
+# e.g. 80 / 84
+%define version_suffix %(echo %{mysql_version} | cut -d. -f1-2 | tr -d .)
+%define plugin_dir /usr/lib64/mysql/plugin
+
+# Boost configuration, needed for 8.0 only
+%if "%{version_suffix}" == "80"
+%define boost_basename boost_%(echo %{boost_version} | sed -e 's/\\./_/g')
+%define boost_download_url https://sourceforge.net/projects/boost/files/boost/%{boost_version}/%{boost_basename}.tar.gz
+%endif
+
+# percona_version is the version of the plugin from the
+# Percona Server tree. This may be behind the MySQL version as Percona
+# can't build their server until MySQL is released.
+# e.g. 8.0.36 # FIXME might be inferred from percona_sever_tag?
+%define percona_version %(echo %{percona_tag} | sed -e 's/Percona-Server-//' -e 's/-[^-]*\$//')
+
+# Hack here for CI integration
+%define _version %{mysql_version}
+ 
+Name:           percona-pam-for-mysql%{version_suffix}
+Version:        %{percona_version}_%{mysql_version}
+Release:        1%{?dist}
+Summary:        Percona PAM authentication plugin for MySQL
+Group:          Applications/Databases
+License:        GPL
+URL:            https://github.com/sjmudd/percona-pam-plugin-for-mysql
+Source0:        https://github.com/mysql/mysql-server/archive/%{mysql_tag}.tar.gz
+Source1:        https://github.com/percona/percona-server/archive/%{percona_tag}.tar.gz
+%if "%{version_suffix}" == "80"
+Source2:        %{boost_download_url}
+%endif
+
+%if 0%{?el7}
+BuildRequires:  bind-utils
+BuildRequires:  bison
+BuildRequires:  cmake3
+BuildRequires:  cyrus-sasl-devel
+BuildRequires:  devtoolset-11-binutils
+BuildRequires:  devtoolset-11-gcc
+BuildRequires:  devtoolset-11-gcc-c++
+BuildRequires:  git
+BuildRequires:  libaio-devel
+BuildRequires:  libcurl-devel
+BuildRequires:  libtirpc-devel
+BuildRequires:  libudev-devel
+BuildRequires:  ncurses-devel
+BuildRequires:  numactl-devel
+BuildRequires:  openldap-devel
+BuildRequires:  openssl-devel
+BuildRequires:  pam-devel
+BuildRequires:  perl
+BuildRequires:  perl-Data-Dumper
+BuildRequires:  perl-Env
+BuildRequires:  perl-JSON
+BuildRequires:  time
+%endif
+%if 0%{?el8}
+BuildRequires:  bind-utils
+BuildRequires:  bison
+BuildRequires:  cmake
+BuildRequires:  cyrus-sasl-devel
+BuildRequires:  gcc-toolset-12-annobin-annocheck
+BuildRequires:  gcc-toolset-12-annobin-plugin-gcc
+BuildRequires:  gcc-toolset-12-binutils
+BuildRequires:  gcc-toolset-12-gcc
+BuildRequires:  gcc-toolset-12-gcc-c++
+BuildRequires:  git
+BuildRequires:  libaio-devel
+BuildRequires:  libcurl-devel
+BuildRequires:  libtirpc-devel
+BuildRequires:  libudev-devel
+BuildRequires:  ncurses-devel
+BuildRequires:  numactl-devel
+BuildRequires:  openldap-devel
+BuildRequires:  openssl-devel
+BuildRequires:  pam-devel
+BuildRequires:  perl
+BuildRequires:  perl-JSON
+BuildRequires:  rpcgen
+BuildRequires:  time
+%endif
+%if 0%{?el9}
+BuildRequires:  bind-utils
+BuildRequires:  bison
+BuildRequires:  cmake
+BuildRequires:  cyrus-sasl-devel
+BuildRequires:  libaio-devel
+BuildRequires:  gcc-toolset-12-annobin-annocheck
+BuildRequires:  gcc-toolset-12-annobin-plugin-gcc
+BuildRequires:  gcc-toolset-12-binutils
+BuildRequires:  gcc-toolset-12-gcc
+BuildRequires:  gcc-toolset-12-gcc-c++
+BuildRequires:  git
+BuildRequires:  libaio-devel
+BuildRequires:  libcurl-devel
+BuildRequires:  libtirpc-devel
+BuildRequires:  libudev-devel
+BuildRequires:  ncurses-devel
+BuildRequires:  numactl-devel
+BuildRequires:  openldap-devel
+BuildRequires:  openssl-devel
+BuildRequires:  pam-devel
+BuildRequires:  perl
+BuildRequires:  perl-JSON
+BuildRequires:  rpcgen
+BuildRequires:  time
+%endif
+Requires:       mysql-community-server >= 8.0
+AutoReqProv:    no
+###Obsoletes:      percona-pam-for-mysql
+
+%description
+Percona PAM plugin for mysql is mysql authentication plugin for authenticating against PAM
+
+This plugin has been built against MySQL tag %{mysql_tag} (%{mysql_version}),
+%if "%{version_suffix}" == "80"
+built using boost version %{boost_version},
+%endif
+using Percona Server PAM code with tag %{percona_tag} (%{percona_version}).
+
+%prep
+# extract tarballs taken from git tree.
+cd $RPM_BUILD_DIR
+rm -rf %{name}-%{version}
+
+tar xzf $RPM_SOURCE_DIR/%{mysql_tag}.tar.gz
+tar xzf $RPM_SOURCE_DIR/%{percona_tag}.tar.gz
+%if "%{version_suffix}" == "80"
+tar xzf $RPM_SOURCE_DIR/%{boost_basename}.tar.gz
+%endif
+
+%build
+# setup normal MySQL build
+cd $RPM_BUILD_DIR/mysql-server-%{mysql_tag}/
+
+# pull in the percona plugin information
+( cd plugin && ln -s ../../percona-server-%{percona_tag}/plugin/percona-pam-for-mysql )
+
+# return back to mysql build
+mkdir bld
+cd bld
+
+cmake3 \
+	-DBUILD_CONFIG=mysql_release \
+	-DINSTALL_LAYOUT=RPM \
+	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+%if "%{version_suffix}" == "80"
+	-DWITH_BOOST=../../%{boost_basename} \
+%endif
+	-DWITH_PAM=1 \
+	../
+
+make %{_smp_mflags} auth_pam
+make %{_smp_mflags} auth_pam_compat
+
+%install
+find $RPM_BUILD_DIR -name auth_pam.so
+find $RPM_BUILD_DIR -name auth_pam_compat.so
+
+built_location=$RPM_BUILD_DIR/mysql-server-mysql-%{mysql_version}/bld/plugin_output_directory
+
+install -D -m 0644 $built_location/auth_pam.so %{buildroot}%{plugin_dir}/auth_pam.so
+install -D -m 0644 $built_location/auth_pam_compat.so %{buildroot}%{plugin_dir}/auth_pam_compat.so
+
+%files
+%{plugin_dir}/auth_pam.so
+%{plugin_dir}/auth_pam_compat.so
+
+%changelog
+* Sun May 5 2024 Simon J Mudd <sjmudd@pobox.com> - 8.4.0-1
+- inspired by original version from Daniël van Eeden

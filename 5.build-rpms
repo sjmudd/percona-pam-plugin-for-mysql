@@ -1,0 +1,94 @@
+#!/bin/bash
+
+. $(dirname $0)/common_code.sh
+
+# build package
+# - FIXME (add signing)
+rpmbuild_rpms () {
+        local label=${OSNAME}__${mysql_version}__${percona_version}__$(utc_timestamp)
+
+        cd ~/rpmbuild/SPECS
+        # Careful with spacing and quoting!
+        msg_info "### rpmbuild started"
+        set -x
+        rpmbuild --define 'el'$MAJOR_VERSION' 1' -ba percona-pam-plugin-for-mysql.spec
+        rc=$?
+        set +x
+        msg_info "### rpmbuild terminated, exit status: $rc"
+
+        # If build is successful record the installed package list,
+        # or record the failed list as that may need fixing.
+        rpm_qa=/data/log/rpm-qa.$label
+        if [ $rc = 0 ]; then
+                rpm -qa | sort > $rpm_qa
+        else
+                rpm -qa | sort > $rpm_qa.failed
+        fi
+
+        return $rc
+}
+
+
+# run the BUILD_USER stage: build rpms as the build user.
+build_rpm_stage () {
+        set -o pipefail
+	local logfile=/data/log/build__${OSNAME}__${mysql_version}__${percona_version}.log
+
+        msg_info "Sending build logging to $logfile"
+        build_rpm_stage_logged 2>&1 | tee -a $logfile
+}
+
+# run the BUILD_USER stage with logging enabled
+build_rpm_stage_logged () {
+        local final_location=/data/built/${OSNAME}__${mysql_version}__${percona_version}
+
+        msg_info "### Starting build stage"
+
+        rpmbuild_rpms
+
+        rc=$?
+        if [ $rc = 0 ]; then
+                # Move built rpms to built location to ensure that they are kept
+                msg_info "### Build succeeded, moving rpms to /data/built"
+                if [ ! -d $final_location ]; then
+                        msg_info "- creating directory $final_location"
+                        mkdir -p $final_location
+                fi
+                for file in ~/rpmbuild/SRPMS/*.rpm ~/rpmbuild/RPMS/*/*.rpm; do
+                        msg_info "- moving $file --> $final_location"
+                        mv $file $final_location/
+                done
+                cp /etc/os-release $final_location/etc_os-release
+        fi
+
+        msg_info "### Completed build stage in $SECONDS seconds with exit status: $rc"
+}
+
+# drop to build user and build
+if [ $(id -un) = root ]; then
+        msg_info "Dropping privileges to user $BUILD_USER to build rpms..."
+	set -x
+	exec su rpmbuild -c "$0 $*"
+fi
+
+if [ $(id -un) != $BUILD_USER ]; then
+	msg_error 1 "Build user $(id -un) is not $BUILD_USER as expected. Exiting"
+fi
+
+# now running as build_user
+msg_info "starting: parameters: $@"
+
+set +u
+mysql_tag=$1
+percona_tag=$2
+set -u
+
+[ -n "$mysql_tag" ] || msg_error 2 "No MySQL tag given."
+[ -n "$percona_tag" ] || msg_error 2 "No Percona tag given."
+
+mysql_version=$(get_mysql_version $mysql_tag)
+percona_version=$(get_percona_version $percona_tag)
+
+build_rpm_stage_logged
+
+msg_info "finished"

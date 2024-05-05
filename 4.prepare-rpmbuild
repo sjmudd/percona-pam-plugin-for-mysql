@@ -1,0 +1,62 @@
+#!/bin/bash
+
+set -e
+
+source $(dirname $0)/common_code.sh
+
+usage () {
+	local rc=$1
+
+	cat <<-EOF
+	$myname (C) 2024 Simon J Mudd <sjmudd@pobox.com>
+
+	Script to make spec file and copy to SPECS directory
+
+	Usage: $myname <mysql_tag> <percona_tag> [<boost_version]
+
+	Boost version only needed for 8.0 builds
+	EOF
+
+	exit $rc
+}
+
+[ $# == 2 -o $# = 3 ] || usage 1
+
+msg_info "$myname: starting"
+
+DEST_DIR=/home/rpmbuild/rpmbuild/SPECS
+
+spec_file=$(dirname $0)/percona-pam-plugin-for-mysql.spec
+test -f ${spec_file}.in ||\
+	msg_error 1 "Missing spec file template ${spec_file}.in"
+
+mysql_tag="$1"
+percona_tag="$2"
+set +u
+boost_version="${3:-}"
+set -u
+
+# Get boost files for 8.0 builds only
+if [ "$(need_boost_version $mysql_tag)" = 1 ]; then
+        if [ -z "$boost_version" ]; then
+                msg_error 1 "Boost version must be provided for MySQL 8.0 builds.  Try 1.77.0 (works with 8.0.36)"
+        fi
+else
+	boost_version=UNUSED
+fi
+
+msg_info "Creating spec file $(basename $spec_file) in $DEST_DIR..."
+
+sed \
+	-e "s/@@MYSQL_TAG@@/$mysql_tag/" \
+	-e "s/@@PERCONA_TAG@@/$percona_tag/" \
+	-e "s/@@BOOST_VERSION@@/$boost_version/" \
+	< ${spec_file}.in \
+	> $DEST_DIR/$(basename $spec_file)
+
+msg_info "Created spec file $spec_file"
+
+# Fix file ownership
+chown rpmbuild:rpmbuild $DEST_DIR/*
+
+msg_info "$myname: completed"

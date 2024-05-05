@@ -1,0 +1,268 @@
+#!/bin/sh
+#
+# build environment for building Percona PAM rpms for MySQL
+#
+
+source $(dirname $0)/common_code.sh
+
+setup_build_user () {
+	if ! grep $BUILD_USER /etc/passwd; then
+		msg_info "### Adding missing build user: $BUILD_USER"
+		useradd -m $BUILD_USER
+	else
+		msg_info "### Required build user $BUILD_USER already present"
+	fi
+
+	# Create missing directories used for persisting data
+	local directories="/data/SRPMS /data/log /data/built"
+	local dir
+
+	for dir in $directories; do
+		if ! test -d $dir; then
+			msg_info "Creating missing directory: $dir, ownership set to $BUILD_USER:$BUILD_USER"
+			mkdir -p $dir
+			chown $BUILD_USER:$BUILD_USER $dir
+		fi
+	done
+}
+
+# - just copy the file and log
+copy_file () {
+	local src=$1
+	local dst=$2
+
+	msg_info "- copying $src to $dst"
+	cp $src $dst
+}
+
+copy_files () {
+	local srcdir=$1
+	local dstdir=$2
+	local file
+
+	if [ -d $srcdir ]; then
+		for file in $srcdir/*; do
+			copy_file $file $dstdir/
+		done
+	fi
+}
+
+# build package
+# - FIXME (add signing)
+rpmbuild_rpms () {
+	local label=${ID}${MAJOR_VERSION}__${mysql_tag}__$(utc_timestamp)
+
+	cd ~/rpmbuild/SPECS
+	# Careful with spacing and quoting!
+	msg_info "### rpmbuild started at $(utc_timestamp)"
+	set -x
+	rpmbuild --define 'el'$MAJOR_VERSION' 1' -ba mysql.spec
+	rc=$?
+	set +x
+	msg_info "### rpmbuild terminated at $(utc_timestamp), exit status: $rc"
+
+	# If build is successful record the installed package list,
+	# or record the failed list as that may need fixing.
+	rpm_qa=/data/log/rpm-qa.$label
+	if [ $rc = 0 ]; then
+		rpm -qa | sort > $rpm_qa
+	else
+		rpm -qa | sort > $rpm_qa.failed
+	fi
+
+	return $rc
+}
+
+
+# run the BUILD_USER stage: build rpms as the build user.
+build_rpm_stage () {
+	set -o pipefail
+	local logfile=/data/log/build__${label}.log
+
+	msg_info "Sending build logging to $logfile"
+	build_rpm_stage_logged 2>&1 | tee -a $logfile
+}
+
+# run the BUILD_USER stage with logging enabled
+build_rpm_stage_logged () {
+	local build_script
+	local final_location
+
+	msg_info "### Starting build stage at $(utc_timestamp)"
+
+	build_script=$(grep -w ${ID}.${MAJOR_VERSION} $config | grep "^${mysql_tag}[[:space:]]" | awk '{ print $4 }')
+
+	if [ -z "$build_script" ]; then
+		msg_error 1 "No rpm build script defined for ${ID}.${MAJOR_VERSION} and ${mysql_tag}. Please configure one."
+	fi
+
+	build_script=/data/config/build/$build_script
+	if [ ! -e "$build_script" ]; then
+		msg_info "Missing build script in $build_script to build $mysql_tag on $ID.${MAJOR_VERSION}"
+		msg_info "MAJOR_VERSION: $MAJOR_VERSION"
+		msg_info "NAME: $NAME"
+		msg_info "ID: $ID"
+		msg_info "VERSION_ID: $VERSION_ID"
+		msg_info "mysql_tag: $mysql_tag"
+		exit 1
+	fi
+
+	msg_info "Sourcing: $build_script"
+	. $build_script
+	msg_info "Sourcing: $build_script complete"
+	build
+
+	rc=$?
+	if [ $rc = 0 ]; then
+		# Move built rpms to built location to ensure that they are kept
+		msg_info "### Build succeeded, moving rpms to /data/built"
+		final_location=/data/built/${ID}.${MAJOR_VERSION}__${mysql_tag}
+		if [ ! -d $final_location ]; then
+			msg_info "- creating directory $final_location"
+			mkdir -p $final_location
+		fi
+		for file in ~/rpmbuild/SRPMS/*.rpm ~/rpmbuild/RPMS/*/*.rpm; do
+			msg_info "- moving $file --> $final_location"
+			mv $file $final_location/
+		done
+		cp /etc/os-release $final_location/etc_os-release
+	fi
+
+	msg_info "### Completed build stage at $(utc_timestamp) in $SECONDS seconds with exit status: $rc"
+}
+
+# run the root user stage: prepare the OS for the build
+ossetup_stage () {
+	local logfile=/data/log/ossetup__${label}.log
+
+	msg_info "Sending prepare logging to $logfile"
+	set -o pipefail
+	ossetup_stage_logged 2>&1 | tee -a $logfile
+	msg_info "ossetup_stage_logged took $SECONDS seconds to run" | tee -a $logfile
+
+	# Complete the rpm build part if requested.
+	# - if not indicate how to proceed
+	if [ -z "$build_all" ]; then
+		msg_info "Continue the build as $BUILD_USER by doing:"
+		msg_info
+		msg_info "    su - $BUILD_USER /data/build $mysql_tag"
+		msg_info
+		msg_info "Alternatively rerun the complete process in one go with:"
+		msg_info
+		msg_info "    $0 -a $mysql_tag"
+		msg_info
+		exit 0
+	fi
+
+	msg_info "##############################################################"
+	msg_info "#  Switching to user $BUILD_USER to complete the rpm build"
+	msg_info "##############################################################"
+	echo
+	su - $BUILD_USER $0 $mysql_tag
+}
+
+ossetup_stage_logged () {
+	ossetup_script=$(grep -w ${ID}.${MAJOR_VERSION} $config | grep "^${mysql_tag}[[:space:]]" | awk '{ print $3 }')
+	if [ -z "$ossetup_script" ]; then
+		msg_error 1 "No OS prepare script defined for ${ID}.${MAJOR_VERSION} and ${mysql_tag}. Please configure one."
+	fi
+
+	ossetup_script=/data/config/ossetup/$ossetup_script
+	if [ ! -e "$ossetup_script" ]; then
+		msg_info "Missing prepare script '$ossetup_script' prepare operating system $NAME ($ID $VERSION_ID) to build MySQL version $mysql_tag"
+		msg_info "MAJOR_VERSION: $MAJOR_VERSION"
+		msg_info "NAME: $NAME"
+		msg_info "ID: $ID"
+		msg_info "VERSION_ID: $VERSION_ID"
+		msg_info "mysql_tag: $mysql_tag"
+		exit 1
+	fi
+
+	msg_info "########################################################"
+	msg_info "#    Preparing OS: $NAME ($ID $VERSION_ID)"
+	msg_info "#    for building rpms with label $mysql_tag"
+	msg_info "########################################################"
+	echo
+	msg_info "Sourcing: $ossetup_script"
+	. $ossetup_script
+	msg_info "Sourcing: $ossetup_script complete"
+
+	prepare
+	setup_build_user
+
+	msg_info "########################################################"
+	msg_info "#    Completed OS: $NAME ($ID $VERSION_ID) preparation"
+	msg_info "#    for building rpms with label $mysql_tag"
+	msg_info "########################################################"
+	echo
+}
+
+make_spec_file () {
+	local osname=$1
+	local mysql_tag=$2
+	local boost_version=$3
+	local percona_tag=$4
+
+	msg_info "creating spec file..."
+
+	sed -e "s/@@MYSQL_TAG@@/$mysql_tag/" -e "s/@@BOOST_VERSION@@/$boost_version/" -e "s/@@PERCONA_TAG@@/$percona_tag/" \
+		< percona-pam-for-mysql.spec.in \
+		> percona-pam-for-mysql.spec
+}
+
+usage () {
+	local rc=$1
+
+	cat <<-EOF
+	$myname (C) 2024 Simon J Mudd <sjmudd@pobox.com>
+
+	Build script for building Percona PAM plugin on MySQL
+
+	Usage: $myname <mysql_tag> <percona_tag>
+	
+	mysql_tag        MySQL tag to build for
+	percona_tag      Percona Server tag to use as the source of the PAM plugin
+	EOF
+
+	exit $rc
+}
+
+set -e
+
+set +u
+[ -z "$USER" ] && USER=$(id -un)
+set -u
+
+while getopts an flag; do
+	case $flag in
+	a)	build_all=1 ;;
+	n)	build_all= ;;
+	*)	msg_error 1 "Invalid FLAG $flag"
+	esac
+done
+shift $(($OPTIND - 1))
+
+if [ $# != 2 -a $# != 3 ]; then
+	usage 1
+fi
+
+mysql_tag=$1
+percona_tag=$2
+set +u
+boost_version=${3:-}
+set -u
+
+msg_info "OSNAME=$OSNAME"
+msg_info "mysql_tag=$mysql_tag"
+msg_info "percona_tag=$percona_tag"
+msg_info "boost_version=$boost_version (not needed for 8.4+ builds)"
+
+cd /data
+
+basedir=$(dirname $0)
+
+$basedir/1.setup.os "$mysql_tag" "$percona_tag" || msg_error 2 "Unable to setup os rpms"
+$basedir/2.setup-rpmbuild-user "$mysql_tag" "$percona_tag" || msg_error 3 "Unable to setup rpmbuild user"
+$basedir/3.download-files "$mysql_tag" "$percona_tag" "$boost_version" || msg_error 4 "Unable to download files"
+$basedir/4.prepare-rpmbuild "$mysql_tag" "$percona_tag" "$boost_version" || msg_error 5 "Unable to prepare files for rpmbuild"
+$basedir/5.build-rpms "$mysql_tag" "$percona_tag" "$boost_version" || msg_error 6 "Unable to build rpms"

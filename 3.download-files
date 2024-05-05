@@ -1,0 +1,63 @@
+#!/bin/bash
+#
+# Download required files to do the build
+# - Note: for 8.0 builds the boost version needs to be specified
+#
+
+. $(dirname $0)/common_code.sh
+
+set -e
+
+set +u
+mysql_tag=$1
+percona_tag=$2
+boost_version=$3
+set -u
+[ -n "$mysql_tag" ] || msg_error 1 "No mysql_tag defined"
+[ -n "$percona_tag" ] || msg_error 1 "No percona_tag defined"
+
+msg_info "Starting: parameters: $@"
+
+SOURCES_DIR=/data/SOURCES
+
+if [ ! -d $SOURCES_DIR ]; then
+	msg_error 1 "Expected SOURCES_DIR=$SOURCES_DIR directory found"
+fi
+
+cd $SOURCES_DIR
+
+# the created tar balls have this form: <repo>-<tag>/....
+msg_info "Downloading urls to $SOURCES_DIR"
+for url in https://github.com/mysql/mysql-server/archive/$mysql_tag.tar.gz https://github.com/percona/percona-server/archive/$percona_tag.tar.gz; do
+	file=$(basename $url)
+	if test -e $file; then
+		msg_info "- found existing $file, NOT downloading again"
+	else
+		msg_info "Downloading $url..."
+		wget -q $url || {
+			# remove incomplete download
+			test -e $file && rm $file
+		       	msg_error 1 "Failed to download $url"
+		}
+		msg_info "Download of $url complete"
+	fi
+done
+
+# Get boost files for 8.0 builds only
+if [ "$(need_boost_version $mysql_tag)" = 1 ]; then
+	if [ -z "$boost_version" ]; then
+		msg_error 1 "Boost version must be provided for MySQL 8.0 builds.  Try 1.77.0 (works with 8.0.36)"
+	fi
+
+	msg_info "Downloading boost files"
+
+	BOOST_TARBALL=boost_$(echo "$boost_version" | sed -e 's/\./_/g').tar.gz
+	if [ ! -e "$BOOST_TARBALL" ]; then
+		msg_info "- getting $BOOST_TARBALL..."
+		wget --no-check-certificate https://sourceforge.net/projects/boost/files/boost/$boost_version/$BOOST_TARBALL
+	else
+		msg_info "- $BOOST_TARBALL already present"
+	fi
+fi
+
+msg_info "Downloaded sources to SOURCES_DIR=$SOURCES_DIR directory"

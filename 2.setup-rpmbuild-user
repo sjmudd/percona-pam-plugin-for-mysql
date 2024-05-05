@@ -1,0 +1,30 @@
+#!/bin/bash
+#
+# Setup the rpmbuild user and directory structure
+#
+
+. $(dirname $0)/common_code.sh
+
+set -e
+
+[ -n "$(id -un $BUILD_USER 2>/dev/null)" ] || {
+	msg_info "Creating missing build user: $BUILD_USER..."
+	useradd -m -U $BUILD_USER
+}
+
+for dir in rpmbuild rpmbuild/SPECS rpmbuild/SRPMS; do
+	if ! test -d $BUILD_HOME/$dir; then
+		msg_info "Creating missing directory: $BUILD_HOME/$dir"
+		mkdir $BUILD_HOME/$dir
+		chown rpmbuild $BUILD_HOME/$dir
+	fi
+done
+
+if [ ! -d $(dirname $0)/SOURCES ]; then
+	msg_info "Creating missing directory: $(dirname $0)/SOURCES"
+	mkdir $(dirname $0)/SOURCES
+fi
+msg_info "Creating symlink for directory $BUILD_HOME/rpmbuild/SOURCES"
+(cd $BUILD_HOME/rpmbuild && ln -s /data/SOURCES)
+
+msg_info "Directory structure for user $BUILD_USER setup"
