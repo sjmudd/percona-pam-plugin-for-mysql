@@ -26,6 +26,12 @@ Docker should work too.
 
 ## Usage
 
+Building requires the use of the upstream *git tags*, taken from the
+corresponding repos.  These tags are currently expected to follow the
+following format:
+- `mysql-X.Y.Z` for version `X.Y.Z` of MySQL Server
+- `Percona-Server-X.Y.Z-R` for version `X.Y.Z` of Percona Server
+
 On the *build host* call `build_one` with appropriate parameters to
 create the spec file and run the build.
 
