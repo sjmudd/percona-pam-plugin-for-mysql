@@ -36,9 +36,6 @@
 # e.g. 8.0.36 # FIXME might be inferred from percona_sever_tag?
 %define percona_version %(echo %{percona_tag} | sed -e 's/Percona-Server-//' -e 's/-[^-]*\$//')
 
-# Hack here for CI integration
-%define _version %{mysql_version}
- 
 Name:           percona-pam-for-mysql%{version_suffix}
 Version:        %{percona_version}_%{mysql_version}
 Release:        1%{?dist}
