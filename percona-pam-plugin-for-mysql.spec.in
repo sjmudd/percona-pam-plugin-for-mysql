@@ -36,8 +36,18 @@
 # e.g. 8.0.36 # FIXME might be inferred from percona_sever_tag?
 %define percona_version %(echo %{percona_tag} | sed -e 's/Percona-Server-//' -e 's/-[^-]*\$//')
 
+# GCC toolset configuration for 9.2+ on el9
+# - improve this later
+%if 0%{?el9}
+%define uses_gcc_toolset_12 %(if echo %{mysql_tag} | grep -q '9\.[234567]\.'; then echo 0; else echo 1; endif)
+%define uses_gcc_toolset_13 %(if echo %{mysql_tag} | grep -q '9\.[234567]\.'; then echo 1; else echo 0; endif)
+%else
+%define uses_gcc_toolset_12 %(if echo %{mysql_tag} | grep -q '9\.[234567]\.'; then echo 0; else echo 1; endif)
+%define uses_gcc_toolset_13 %(if echo %{mysql_tag} | grep -q '9\.[234567]\.'; then echo 1; else echo 0; endif)
+%endif
+
 Name:           percona-pam-for-mysql%{version_suffix}
-Version:        %{percona_version}_%{mysql_version}
+Version:        %{mysql_version}_%{percona_version}
 Release:        1%{?dist}
 Summary:        Percona PAM authentication plugin for MySQL
 Group:          Applications/Databases
@@ -104,11 +114,20 @@ BuildRequires:  bison
 BuildRequires:  cmake
 BuildRequires:  cyrus-sasl-devel
 BuildRequires:  libaio-devel
+%if 0%{?uses_gcc_toolset_12}
 BuildRequires:  gcc-toolset-12-annobin-annocheck
 BuildRequires:  gcc-toolset-12-annobin-plugin-gcc
 BuildRequires:  gcc-toolset-12-binutils
 BuildRequires:  gcc-toolset-12-gcc
 BuildRequires:  gcc-toolset-12-gcc-c++
+%endif
+%if 0%{?uses_gcc_toolset_13}
+BuildRequires:  gcc-toolset-13-annobin-annocheck
+BuildRequires:  gcc-toolset-13-annobin-plugin-gcc
+BuildRequires:  gcc-toolset-13-binutils
+BuildRequires:  gcc-toolset-13-gcc
+BuildRequires:  gcc-toolset-13-gcc-c++
+%endif
 BuildRequires:  git
 BuildRequires:  libaio-devel
 BuildRequires:  libcurl-devel

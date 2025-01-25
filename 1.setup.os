@@ -89,16 +89,22 @@ OEL8_RPMS="
 	rpcgen
 	time"
 
+# Improve this hacky logic later.
+GCC_TOOLSET_12_PACKAGES="gcc-toolset-12-annobin-annocheck gcc-toolset-12-annobin-plugin-gcc gcc-toolset-12-binutils gcc-toolset-12-dwz gcc-toolset-12-gcc gcc-toolset-12-gcc-c++"
+GCC_TOOLSET_13_PACKAGES="gcc-toolset-13-annobin-annocheck gcc-toolset-13-annobin-plugin-gcc gcc-toolset-13-binutils gcc-toolset-13-dwz gcc-toolset-13-gcc gcc-toolset-13-gcc-c++"
+
+if echo $mysql_tag | grep -q mysql-9\.2\.; then
+    GCC_TOOLSET_PACKAGES=$GCC_TOOLSET_13_PACKAGES
+else
+    GCC_TOOLSET_PACKAGES=$GCC_TOOLSET_12_PACKAGES
+fi
+
 CENTOS9_RPMS="
 	bind-utils
 	bison
 	cmake
 	cyrus-sasl-devel libaio-devel
-	gcc-toolset-12-annobin-annocheck
-	gcc-toolset-12-annobin-plugin-gcc
-	gcc-toolset-12-binutils
-	gcc-toolset-12-dwz
-	gcc-toolset-12-gcc
+	$GCC_TOOLSET_PACKAGES
 	gcc-toolset-12-gcc-c++
 	git
 	libcurl-devel

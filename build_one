@@ -36,16 +36,6 @@ get_oses () {
 	sed -e 's/[[:space:]][[:space:]]*/ /g'
 }
 
-get_labels () {
-	local os=$1
-
-	grep -v "^#" build.conf |\
-	grep -v "^[[:space:]]*$" |\
-	awk -v os=$os 'os == $2 { print $1 }' | sort |\
-	tr "\n" " " |\
-	sed -e 's/[[:space:]][[:space:]]*/ /g'
-}
-
 get_image () {
 	local osname=$1
 
@@ -70,8 +60,8 @@ check_mysql_tag () {
 
 	[ -n "$mysql_tag" ] || msg_error 2 "No MySQL tag given."
 	# Accept only expected values so far
-	if ! echo "$mysql_tag" | grep -q '^mysql-8\.[0-9][[0-9]*\.[0-9][0-9]*$'; then
-		msg_error 3 "Invalid MySQL tag '$mysql_tag'.  Expected to be of the form mysql-8.X.Y where X & Y are digits >=0"
+	if ! echo "$mysql_tag" | grep -q '^mysql-[89]\.[0-9][[0-9]*\.[0-9][0-9]*$'; then
+		msg_error 3 "Invalid MySQL tag '$mysql_tag'.  Expected to be of the form mysql-[89].X.Y where X & Y are digits >=0"
 	fi
 	[ -n "$(check_remote_tag $mysql_server_url $mysql_tag)" ] || msg_error 3 "No MySQL tag $mysql_tag found on $mysql_server_url."
 }
@@ -81,8 +71,8 @@ check_percona_tag () {
 
 	[ -n "$percona_tag" ] || msg_error 4 "No percona tag provided."
 	# Accept only expected values so far
-	if ! echo "$percona_tag" | grep -q '^Percona-Server-8\.[0-9][[0-9]*\.[0-9][0-9]*-[0-9][0-9]*$'; then
-		msg_error 3 "Invalid Percona tag '$percona_tag'.  Expected to be of the form Percona-Server-8.X.Y-Z where X, Y & Z are digits >=0"
+	if ! echo "$percona_tag" | grep -q '^Percona-Server-[89]\.[0-9][[0-9]*\.[0-9][0-9]*-[0-9][0-9]*$'; then
+		msg_error 3 "Invalid Percona tag '$percona_tag'.  Expected to be of the form Percona-Server-[89].X.Y-Z where X, Y & Z are digits >=0"
 	fi
 	[ -n "$(check_remote_tag $percona_server_url $percona_tag)" ] || msg_error 5 "No Percona tag $percona_tag found on $percona_server_url."
 }
