@@ -50,6 +50,8 @@ A typical usage would be:
 
 - `build_one centos9 mysql-8.0.37 Percona-Server-8.0.36-28 1.77.0`, or
 - `build_one ol9 mysql-8.4.0 Percona-Server-8.3.0-1`
+- `build_one ol9 mysql-8.4.4 Percona-Server-8.4.3-3`
+- `build_one ol9 mysql-9.2.0 Percona-Server-9.1.0-1`
 
 ## Notes
 
