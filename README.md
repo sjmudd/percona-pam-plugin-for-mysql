@@ -10,6 +10,8 @@ There are reasons to do both. You choose.
 
 Both code bases use GPL software so this is perfectly acceptable.
 
+The code currently works against MySQL 8.0 / 8.4 and 9.X.
+
 This repo provides a process to build the Percona PAM plugin on the
 MySQL server and create the rpms that are needed.  Intended to be used
 on RHEL 7/8/9 and "compatible" distributions.
