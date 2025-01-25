@@ -56,7 +56,7 @@ A typical usage would be:
 ## Notes
 
 - Percona builds typically are available some time after they have merged changes in from upstream, so you may want to build against a new version of MySQL using the previous version of the PAM plugin from Percona.
-- plugin compatibility is generally stable but did change in 8.0.
+- plugin compatibility is generally stable but did change in 8.0. It has been tested on 8.4 and 9.X.
 - The LICENSE for building is BSD 2-clause while the upstream source code is
 GPL. The upstream source is not included in this repo.
 
